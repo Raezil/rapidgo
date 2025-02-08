@@ -20,8 +20,9 @@ type MiddlewareFunc func(c *Context)
 
 // Router to manage routes and global middlewares
 type Router struct {
-	Routes      []*Route
-	Middlewares []MiddlewareFunc // Store global middleware
+	Routes          []*Route
+	Middlewares     []MiddlewareFunc // Store global middleware
+	NotFoundMessage *string
 }
 
 // RouterGroup for grouping routes with specific base paths and middleware
@@ -137,7 +138,11 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	}
 
-	http.NotFound(w, req)
+	if r.NotFoundMessage != nil {
+		http.Error(w, *r.NotFoundMessage, http.StatusNotFound)
+	} else {
+		http.NotFound(w, req)
+	}
 }
 
 // Grouping Routes
@@ -162,26 +167,27 @@ func (e *Engine) Use(middleware ...MiddlewareFunc) {
 }
 
 // Engine HTTP Methods
-func (e *Engine) GET(path string, handler func(c *Context))     { e.groups[0].GET(path, handler) }
-func (e *Engine) POST(path string, handler func(c *Context))    { e.groups[0].POST(path, handler) }
-func (e *Engine) PUT(path string, handler func(c *Context))     { e.groups[0].PUT(path, handler) }
-func (e *Engine) DELETE(path string, handler func(c *Context))  { e.groups[0].DELETE(path, handler) }
-func (e *Engine) PATCH(path string, handler func(c *Context))   { e.groups[0].PATCH(path, handler) }
-func (e *Engine) OPTIONS(path string, handler func(c *Context)) { e.groups[0].OPTIONS(path, handler) }
-func (e *Engine) HEAD(path string, handler func(c *Context))    { e.groups[0].HEAD(path, handler) }
+func (e *Engine) Get(path string, handler func(c *Context))     { e.groups[0].Get(path, handler) }
+func (e *Engine) Post(path string, handler func(c *Context))    { e.groups[0].Post(path, handler) }
+func (e *Engine) Put(path string, handler func(c *Context))     { e.groups[0].Put(path, handler) }
+func (e *Engine) Delete(path string, handler func(c *Context))  { e.groups[0].Delete(path, handler) }
+func (e *Engine) Patch(path string, handler func(c *Context))   { e.groups[0].Patch(path, handler) }
+func (e *Engine) Options(path string, handler func(c *Context)) { e.groups[0].Options(path, handler) }
+func (e *Engine) Head(path string, handler func(c *Context))    { e.groups[0].Head(path, handler) }
+func (e *Engine) SetNotFoundMessage(message string)             { e.Router.NotFoundMessage = &message }
 
 // RouterGroup HTTP Methods
-func (r *RouterGroup) GET(path string, handler func(c *Context))  { r.handle("GET", path, handler) }
-func (r *RouterGroup) POST(path string, handler func(c *Context)) { r.handle("POST", path, handler) }
-func (r *RouterGroup) PUT(path string, handler func(c *Context))  { r.handle("PUT", path, handler) }
-func (r *RouterGroup) DELETE(path string, handler func(c *Context)) {
+func (r *RouterGroup) Get(path string, handler func(c *Context))  { r.handle("GET", path, handler) }
+func (r *RouterGroup) Post(path string, handler func(c *Context)) { r.handle("POST", path, handler) }
+func (r *RouterGroup) Put(path string, handler func(c *Context))  { r.handle("PUT", path, handler) }
+func (r *RouterGroup) Delete(path string, handler func(c *Context)) {
 	r.handle("DELETE", path, handler)
 }
-func (r *RouterGroup) PATCH(path string, handler func(c *Context)) { r.handle("PATCH", path, handler) }
-func (r *RouterGroup) OPTIONS(path string, handler func(c *Context)) {
+func (r *RouterGroup) Patch(path string, handler func(c *Context)) { r.handle("PATCH", path, handler) }
+func (r *RouterGroup) Options(path string, handler func(c *Context)) {
 	r.handle("OPTIONS", path, handler)
 }
-func (r *RouterGroup) HEAD(path string, handler func(c *Context)) { r.handle("HEAD", path, handler) }
+func (r *RouterGroup) Head(path string, handler func(c *Context)) { r.handle("HEAD", path, handler) }
 
 // Engine method to listen on a custom port
 func (e *Engine) Listen() error {

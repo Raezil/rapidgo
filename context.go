@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 )
 
 type Context struct {
@@ -102,4 +103,32 @@ func (c *Context) Param(key string) string {
 
 func (c *Context) Params() map[string]string {
 	return c.params
+}
+
+func (c *Context) GetCookie(key string) string {
+	cookie, err := c.Request.Cookie(key)
+	if err != nil {
+		return ""
+	}
+	return cookie.Value
+}
+
+func (c *Context) SetCookie(key, value string, age time.Duration, secure bool) {
+	cookie := &http.Cookie{
+		Name:     key,
+		Value:    value,
+		MaxAge:   int(age.Seconds()),
+		Secure:   secure,
+		HttpOnly: true,
+	}
+	c.Response.Header().Set("Set-Cookie", cookie.String())
+}
+
+func (c *Context) DeleteCookie(key string) {
+	cookie := &http.Cookie{
+		Name:   key,
+		Value:  "",
+		MaxAge: -1,
+	}
+	c.Response.Header().Set("Set-Cookie", cookie.String())
 }
