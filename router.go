@@ -2,13 +2,17 @@ package rapidgo
 
 import (
 	"net/http"
+	"regexp"
+	"strings"
 )
 
 // Route struct to store route information
 type Route struct {
-	Path    string
-	Method  string
-	Handler func(c *Context)
+	Path       string
+	PathParams []string
+	PathRegex  *regexp.Regexp
+	Method     string
+	Handler    func(c *Context)
 }
 
 // Middleware function signature
@@ -49,12 +53,42 @@ func New() *Engine {
 	return engine
 }
 
+func NewRoute(method, path string, handler func(c *Context)) *Route {
+	// Find all :params in the path
+	re := regexp.MustCompile(`:(\w+)`)
+	matches := re.FindAllString(path, -1)
+
+	// Clean up the param names by removing the colon
+	params := make([]string, len(matches))
+	for i, match := range matches {
+		params[i] = strings.TrimPrefix(match, ":")
+	}
+
+	// Replace :params with (\w+)
+	pattern := path
+	for _, param := range matches {
+		pattern = strings.Replace(pattern, param, `(\w+)`, -1)
+	}
+
+	regex := regexp.MustCompile(pattern)
+
+	return &Route{
+		Path:       path,
+		PathParams: params,
+		PathRegex:  regex,
+		Method:     method,
+		Handler:    handler,
+	}
+}
+
 // Handle requests, applying middleware at the group level
 func (r *RouterGroup) handle(method string, path string, handler func(c *Context)) {
 	fullPath := r.BasePath + path
 	if r.BasePath == "/" {
 		fullPath = path
 	}
+
+	route := NewRoute(method, fullPath, handler)
 
 	finalHandler := func(c *Context) {
 		for _, middleware := range r.Router.Middlewares {
@@ -68,21 +102,41 @@ func (r *RouterGroup) handle(method string, path string, handler func(c *Context
 		c.Next()
 	}
 
-	r.Router.Routes = append(r.Router.Routes, &Route{
-		Path:    fullPath,
-		Method:  method,
-		Handler: finalHandler,
-	})
+	route.Handler = finalHandler
+	r.Router.Routes = append(r.Router.Routes, route)
 }
 
 // Find and execute the appropriate route
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	for _, route := range r.Routes {
-		if route.Method == req.Method && route.Path == req.URL.Path {
-			route.Handler(NewContext(w, req))
+		if route.Method != req.Method {
+			continue
+		}
+
+		// if route has no params, just compare the path
+		if len(route.PathParams) == 0 {
+			if route.Path == req.URL.Path {
+				route.Handler(NewContext(w, req))
+				return
+			}
+		}
+
+		// if route has params, check if the path matches the regex
+		matches := route.PathRegex.FindStringSubmatch(req.URL.Path)
+		if len(matches) > 0 {
+			// create a new context
+			c := NewContext(w, req)
+
+			// Add params to the context
+			for i, param := range route.PathParams {
+				c.params[param] = matches[i+1]
+			}
+			route.Handler(c)
 			return
 		}
+
 	}
+
 	http.NotFound(w, req)
 }
 

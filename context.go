@@ -12,6 +12,7 @@ type Context struct {
 	handlers   []func(c *Context)
 	handlerIdx int
 	values     map[string]any
+	params     map[string]string
 }
 
 func NewContext(responseWriter http.ResponseWriter, request *http.Request) *Context {
@@ -21,6 +22,7 @@ func NewContext(responseWriter http.ResponseWriter, request *http.Request) *Cont
 		handlers:   make([]func(c *Context), 0),
 		handlerIdx: -1,
 		values:     make(map[string]any),
+		params:     make(map[string]string),
 	}
 }
 
@@ -92,4 +94,12 @@ func (c *Context) Set(key string, value any) {
 // Get any key value pair from the context
 func (c *Context) Get(key string) any {
 	return c.values[key]
+}
+
+func (c *Context) Param(key string) string {
+	return c.params[key]
+}
+
+func (c *Context) Params() map[string]string {
+	return c.params
 }
