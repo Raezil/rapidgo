@@ -1,12 +1,20 @@
 package main
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/rwiteshbera/rapidgo"
 )
 
 func main() {
+	rapidgo.LoadEnv()
+
 	router := rapidgo.New()
 
+	fmt.Println(os.Getenv("PORT"))
+	fmt.Println(os.Getenv("PASS"))
+	fmt.Println(os.Getenv("USERNAME"))
 	router.SetDebug(false)
 
 	// Middleware examples

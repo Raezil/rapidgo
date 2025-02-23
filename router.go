@@ -1,7 +1,6 @@
 package rapidgo
 
 import (
-	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -57,7 +56,6 @@ func New() *Engine {
 		},
 		debug: true,
 	}
-
 	return engine
 }
 
@@ -195,7 +193,5 @@ func (e *Engine) Listen() error {
 	if e.debug {
 		e.PrintRoutes()
 	}
-
-	log.Printf("Server is running on: %s:%s", "http://localhost", DEFAULT_PORT)
 	return http.ListenAndServe(DEFAULT_PORT, e.Router)
 }
