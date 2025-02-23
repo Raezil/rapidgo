@@ -1,6 +1,7 @@
 package rapidgo
 
 import (
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -20,8 +21,8 @@ type MiddlewareFunc func(c *Context)
 
 // Router to manage routes and global middlewares
 type Router struct {
-	Routes          []*Route
-	Middlewares     []MiddlewareFunc // Store global middleware
+	trees           map[string]*node // method -> tree root node
+	Middlewares     []MiddlewareFunc
 	NotFoundMessage *string
 }
 
@@ -36,11 +37,15 @@ type RouterGroup struct {
 type Engine struct {
 	Router *Router
 	groups []*RouterGroup
+	debug  bool
 }
 
 // New creates a new Engine instance
 func New() *Engine {
-	router := &Router{Routes: []*Route{}, Middlewares: []MiddlewareFunc{}}
+	router := &Router{
+		trees:       make(map[string]*node),
+		Middlewares: []MiddlewareFunc{},
+	}
 	engine := &Engine{
 		Router: router,
 		groups: []*RouterGroup{
@@ -50,8 +55,14 @@ func New() *Engine {
 				Middleware: []MiddlewareFunc{},
 			},
 		},
+		debug: true,
 	}
+
 	return engine
+}
+
+func (e *Engine) SetDebug(debug bool) {
+	e.debug = debug
 }
 
 func NewRoute(method, path string, handler func(c *Context)) *Route {
@@ -89,53 +100,43 @@ func (r *RouterGroup) handle(method string, path string, handler func(c *Context
 		fullPath = path
 	}
 
-	route := NewRoute(method, fullPath, handler)
-
 	finalHandler := func(c *Context) {
+		// Apply global middlewares
 		for _, middleware := range r.Router.Middlewares {
 			c.handlers = append(c.handlers, middleware)
 		}
+		// Apply group-specific middlewares
 		for _, middleware := range r.Middleware {
 			c.handlers = append(c.handlers, middleware)
 		}
+		// Append the route handler
 		c.handlers = append(c.handlers, handler)
 		c.handlerIdx = -1
 		c.Next()
 	}
 
-	route.Handler = finalHandler
-	r.Router.Routes = append(r.Router.Routes, route)
+	r.Router.addRoute(method, fullPath, finalHandler)
+}
+
+func (r *Router) addRoute(method, path string, handler func(*Context)) {
+	root := r.trees[method]
+	if root == nil {
+		root = &node{}
+		r.trees[method] = root
+	}
+	root.insert(path, handler)
 }
 
 // Find and execute the appropriate route
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	for _, route := range r.Routes {
-		if route.Method != req.Method {
-			continue
-		}
-
-		// if route has no params, just compare the path
-		if len(route.PathParams) == 0 {
-			if route.Path == req.URL.Path {
-				route.Handler(NewContext(w, req))
-				return
-			}
-		}
-
-		// if route has params, check if the path matches the regex
-		matches := route.PathRegex.FindStringSubmatch(req.URL.Path)
-		if len(matches) > 0 {
-			// create a new context
+	if root := r.trees[req.Method]; root != nil {
+		params := make(map[string]string)
+		if handler := root.search(req.URL.Path, params); handler != nil {
 			c := NewContext(w, req)
-
-			// Add params to the context
-			for i, param := range route.PathParams {
-				c.params[param] = matches[i+1]
-			}
-			route.Handler(c)
+			c.params = params
+			handler(c)
 			return
 		}
-
 	}
 
 	if r.NotFoundMessage != nil {
@@ -191,5 +192,10 @@ func (r *RouterGroup) Head(path string, handler func(c *Context)) { r.handle("HE
 
 // Engine method to listen on a custom port
 func (e *Engine) Listen() error {
+	if e.debug {
+		e.PrintRoutes()
+	}
+
+	log.Printf("Server is running on: %s:%s", "http://localhost", DEFAULT_PORT)
 	return http.ListenAndServe(DEFAULT_PORT, e.Router)
 }
