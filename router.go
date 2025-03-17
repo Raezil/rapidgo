@@ -189,9 +189,10 @@ func (r *RouterGroup) Options(path string, handler func(c *Context)) {
 func (r *RouterGroup) Head(path string, handler func(c *Context)) { r.handle("HEAD", path, handler) }
 
 // Engine method to listen on a custom port
-func (e *Engine) Listen() error {
+func (e *Engine) Listen(port ...string) error {
+	address := ResolvePort(port)
 	if e.debug {
-		e.PrintRoutes()
+		e.PrintRoutes(address)
 	}
-	return http.ListenAndServe(DEFAULT_PORT, e.Router)
+	return http.ListenAndServe(address, e.Router)
 }
