@@ -3,7 +3,8 @@ package rapidgo
 import "fmt"
 
 // PrintRoutes prints all registered routes in a tree structure
-func (e *Engine) PrintRoutes() {
+func (e *Engine) PrintRoutes(address string) {
+	fmt.Printf("Server is running on%s\n", address)
 	fmt.Println("\nRegistered Routes:")
 	fmt.Println("================")
 	for method, root := range e.Router.trees {

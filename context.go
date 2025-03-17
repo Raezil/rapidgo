@@ -38,6 +38,7 @@ func (c *Context) JSON(status int, v any) {
 }
 
 func (c *Context) Send(v string) {
+	c.Response.Header().Set("Content-Type", "text/plain")
 	c.Response.WriteHeader(200)
 	c.Response.Write([]byte(v))
 }

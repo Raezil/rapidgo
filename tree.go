@@ -56,27 +56,32 @@ func (n *node) search(path string, params map[string]string) func(*Context) {
 		}
 
 		var found *node
+		var wildCard *node
 		// Check all children for a match.
 		for _, child := range current.children {
-			// If the segment exactly matches the child's path, choose it.
+			// Exact match takes precedence.
 			if child.path == segment {
 				found = child
 				break
 			}
-			// Otherwise, if the child is a wildcard (e.g. ":id"), match it.
-			if child.isWild {
-				found = child
-				// Extract the parameter value (exclude the ':' from the key).
-				params[child.path[1:]] = segment
-				break
+			// Keep track of the first wildcard match as a fallback.
+			if child.isWild && wildCard == nil {
+				wildCard = child
 			}
 		}
 
 		// If no matching child is found, return nil.
-		if found == nil {
+		// Use the exact match if found; otherwise, fall back to the wildcard.
+		if found != nil {
+			current = found
+		} else if wildCard != nil {
+			// Extract the parameter value (exclude the ':' from the key).
+			params[wildCard.path[1:]] = segment
+			current = wildCard
+		} else {
+			// No matching child found.
 			return nil
 		}
-		current = found
 	}
 
 	return current.handler
