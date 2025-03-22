@@ -3,6 +3,7 @@ package rapidgo
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 func ResolvePort(addr []string) string {
@@ -17,4 +18,17 @@ func ResolvePort(addr []string) string {
 	} else {
 		panic("Too many parameters")
 	}
+}
+
+// Check if the path is dynamic
+func IsDynamic(path string) bool {
+	if len(path) > 0 && (strings.Contains(path, ":") || strings.Contains(path, "*")) {
+		return true
+	}
+	return false
+}
+
+// Generate Static Route Key value
+func GenerateStaticRouteKey(method, path string) string {
+	return method + "#" + path
 }

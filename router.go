@@ -2,17 +2,13 @@ package rapidgo
 
 import (
 	"net/http"
-	"regexp"
-	"strings"
 )
 
 // Route struct to store route information
 type Route struct {
-	Path       string
-	PathParams []string
-	PathRegex  *regexp.Regexp
-	Method     string
-	Handler    func(c *Context)
+	path    string
+	method  string
+	handler func(c *Context)
 }
 
 // Middleware function signature
@@ -20,9 +16,10 @@ type MiddlewareFunc func(c *Context)
 
 // Router to manage routes and global middlewares
 type Router struct {
-	trees           map[string]*node // method -> tree root node
-	Middlewares     []MiddlewareFunc
-	NotFoundMessage *string
+	dynamicRoutes   map[string]*Node  // method -> tree root node
+	staticRoutes    map[string]*Route // method -> path -> route
+	middlewares     []MiddlewareFunc
+	notFoundMessage *string
 }
 
 // RouterGroup for grouping routes with specific base paths and middleware
@@ -42,8 +39,9 @@ type Engine struct {
 // New creates a new Engine instance
 func New() *Engine {
 	router := &Router{
-		trees:       make(map[string]*node),
-		Middlewares: []MiddlewareFunc{},
+		dynamicRoutes: make(map[string]*Node),
+		staticRoutes:  make(map[string]*Route),
+		middlewares:   []MiddlewareFunc{},
 	}
 	engine := &Engine{
 		Router: router,
@@ -63,34 +61,6 @@ func (e *Engine) SetDebug(debug bool) {
 	e.debug = debug
 }
 
-func NewRoute(method, path string, handler func(c *Context)) *Route {
-	// Find all :params in the path
-	re := regexp.MustCompile(`:(\w+)`)
-	matches := re.FindAllString(path, -1)
-
-	// Clean up the param names by removing the colon
-	params := make([]string, len(matches))
-	for i, match := range matches {
-		params[i] = strings.TrimPrefix(match, ":")
-	}
-
-	// Replace :params with (\w+)
-	pattern := path
-	for _, param := range matches {
-		pattern = strings.Replace(pattern, param, `(\w+)`, -1)
-	}
-
-	regex := regexp.MustCompile(pattern)
-
-	return &Route{
-		Path:       path,
-		PathParams: params,
-		PathRegex:  regex,
-		Method:     method,
-		Handler:    handler,
-	}
-}
-
 // Handle requests, applying middleware at the group level
 func (r *RouterGroup) handle(method string, path string, handler func(c *Context)) {
 	fullPath := r.BasePath + path
@@ -100,7 +70,7 @@ func (r *RouterGroup) handle(method string, path string, handler func(c *Context
 
 	finalHandler := func(c *Context) {
 		// Apply global middlewares
-		for _, middleware := range r.Router.Middlewares {
+		for _, middleware := range r.Router.middlewares {
 			c.handlers = append(c.handlers, middleware)
 		}
 		// Apply group-specific middlewares
@@ -117,28 +87,45 @@ func (r *RouterGroup) handle(method string, path string, handler func(c *Context
 }
 
 func (r *Router) addRoute(method, path string, handler func(*Context)) {
-	root := r.trees[method]
-	if root == nil {
-		root = &node{}
-		r.trees[method] = root
+	if IsDynamic(path) {
+		if r.dynamicRoutes[method] == nil {
+			r.dynamicRoutes[method] = &Node{}
+		}
+		r.dynamicRoutes[method].insert(path, handler)
+	} else {
+		routeKey := GenerateStaticRouteKey(method, path)
+		r.staticRoutes[routeKey] = &Route{
+			path:    path,
+			method:  method,
+			handler: handler,
+		}
 	}
-	root.insert(path, handler)
 }
 
 // Find and execute the appropriate route
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if root := r.trees[req.Method]; root != nil {
-		params := make(map[string]string)
-		if handler := root.search(req.URL.Path, params); handler != nil {
-			c := NewContext(w, req)
-			c.params = params
-			handler(c)
-			return
+	path := req.URL.Path
+	method := req.Method
+	routeKey := GenerateStaticRouteKey(method, path)
+	// Check if the route exists in the static routes map
+	if route, exists := r.staticRoutes[routeKey]; exists {
+		c := NewContext(w, req)
+		route.handler(c)
+		return
+	} else {
+		if root := r.dynamicRoutes[method]; root != nil {
+			params := make(map[string]string)
+			if handler := root.search(path, params); handler != nil {
+				c := NewContext(w, req)
+				c.params = params
+				handler(c)
+				return
+			}
 		}
 	}
 
-	if r.NotFoundMessage != nil {
-		http.Error(w, *r.NotFoundMessage, http.StatusNotFound)
+	if r.notFoundMessage != nil {
+		http.Error(w, *r.notFoundMessage, http.StatusNotFound)
 	} else {
 		http.NotFound(w, req)
 	}
@@ -162,7 +149,7 @@ func (r *RouterGroup) Use(middleware ...MiddlewareFunc) {
 
 // Use middleware at global level
 func (e *Engine) Use(middleware ...MiddlewareFunc) {
-	e.Router.Middlewares = append(e.Router.Middlewares, middleware...)
+	e.Router.middlewares = append(e.Router.middlewares, middleware...)
 }
 
 // Engine HTTP Methods
@@ -173,7 +160,7 @@ func (e *Engine) Delete(path string, handler func(c *Context))  { e.groups[0].De
 func (e *Engine) Patch(path string, handler func(c *Context))   { e.groups[0].Patch(path, handler) }
 func (e *Engine) Options(path string, handler func(c *Context)) { e.groups[0].Options(path, handler) }
 func (e *Engine) Head(path string, handler func(c *Context))    { e.groups[0].Head(path, handler) }
-func (e *Engine) SetNotFoundMessage(message string)             { e.Router.NotFoundMessage = &message }
+func (e *Engine) SetNotFoundMessage(message string)             { e.Router.notFoundMessage = &message }
 
 // RouterGroup HTTP Methods
 func (r *RouterGroup) Get(path string, handler func(c *Context))  { r.handle("GET", path, handler) }
@@ -191,8 +178,8 @@ func (r *RouterGroup) Head(path string, handler func(c *Context)) { r.handle("HE
 // Engine method to listen on a custom port
 func (e *Engine) Listen(port ...string) error {
 	address := ResolvePort(port)
-	if e.debug {
-		e.PrintRoutes(address)
-	}
+	// if e.debug {
+	// 	e.PrintRoutes(address)
+	// }
 	return http.ListenAndServe(address, e.Router)
 }
