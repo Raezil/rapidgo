@@ -3,14 +3,14 @@ package rapidgo
 import "strings"
 
 // node represents a radix tree node used for routing.
-type node struct {
+type Node struct {
 	path     string         // Static or wildcard path segment
-	children []*node        // Child nodes
+	children []*Node        // Child nodes
 	handler  func(*Context) // Handler for the route, if applicable
 	isWild   bool           // True if this node represents a wildcard (:param)
 }
 
-func (n *node) insert(path string, handler func(*Context)) {
+func (n *Node) insert(path string, handler func(*Context)) {
 	// Remove any leading/trailing slashes and split into segments.
 	segments := strings.Split(strings.Trim(path, "/"), "/")
 	current := n
@@ -20,7 +20,7 @@ func (n *node) insert(path string, handler func(*Context)) {
 			continue // Skip empty segments.
 		}
 
-		var child *node
+		var child *Node
 		// Look for an existing child node that exactly matches this segment.
 		for _, c := range current.children {
 			if c.path == segment {
@@ -31,7 +31,7 @@ func (n *node) insert(path string, handler func(*Context)) {
 
 		// If no child was found, create a new node for this segment.
 		if child == nil {
-			child = &node{
+			child = &Node{
 				path:   segment,
 				isWild: len(segment) > 0 && segment[0] == ':',
 			}
@@ -45,7 +45,7 @@ func (n *node) insert(path string, handler func(*Context)) {
 	current.handler = handler
 }
 
-func (n *node) search(path string, params map[string]string) func(*Context) {
+func (n *Node) search(path string, params map[string]string) func(*Context) {
 	// Split the path by "/" (ignoring empty segments).
 	segments := strings.Split(strings.Trim(path, "/"), "/")
 	current := n
@@ -55,8 +55,8 @@ func (n *node) search(path string, params map[string]string) func(*Context) {
 			continue
 		}
 
-		var found *node
-		var wildCard *node
+		var found *Node
+		var wildCard *Node
 		// Check all children for a match.
 		for _, child := range current.children {
 			// Exact match takes precedence.
